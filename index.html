@@ -1,11 +1,11 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101827">
   <title>VoltMarket GH | Electronics Marketplace</title>
-  <meta name="description" content="Discover phones, laptops, gaming gear and electronics in Ghana.">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body {
       margin: 0;
@@ -16,43 +16,205 @@
     header {
       background: #101827;
       color: white;
-      padding: 22px 16px;
+      padding: 24px 18px;
     }
     header h1 { margin: 0 0 8px; }
     header p { margin: 0; color: #cbd5e1; }
-    main { padding: 20px 16px; max-width: 900px; margin: auto; }
+    main { max-width: 900px; margin: auto; padding: 20px 16px; }
     input, button {
       box-sizing: border-box;
-      padding: 13px;
+      padding: 12px;
       border-radius: 8px;
       font-size: 16px;
     }
     input { width: 100%; border: 1px solid #cbd5e1; }
-    .categories { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
-    .categories span { background: white; padding: 10px; border-radius: 8px; }
-    #status { color: #475569; }
+    button {
+      border: 0;
+      background: #13875d;
+      color: white;
+      cursor: pointer;
+    }
+    .categories {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 16px 0 24px;
+    }
+    .categories span {
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+    }
+    .product {
+      background: white;
+      padding: 14px;
+      margin: 10px 0;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+    }
+    .price { color: #13875d; font-weight: bold; }
+    #status { padding: 12px; background: white; border-radius: 8px; }
+    .muted { color: #64748b; font-size: 14px; }
   </style>
 </head>
 <body>
   <header>
-    <h1>VoltMarket GH</h1>
+    <h1>⚡ VoltMarket GH</h1>
     <p>Ghana's marketplace for electronics.</p>
   </header>
+
   <main>
     <h2>Find your next device</h2>
-    <input type="search" placeholder="Search phones, laptops, gaming gear...">
-    <div class="categories">
-      <span>📱 Phones & Tablets</span>
-      <span>💻 Laptops</span>
-      <span>🎮 Gaming</span>
-      <span>📺 TVs & Displays</span>
-      <span>🎧 Audio</span>
-      <span>📷 Cameras</span>
-      <span>⌚ Smart Devices</span>
-      <span>🔌 Accessories</span>
+    <input id="search" type="search"
+      placeholder="Search phones, laptops, gaming gear...">
+
+    <h3>Categories</h3>
+    <div class="categories" id="categories">
+      Loading categories...
     </div>
+
     <h2>Marketplace</h2>
-    <p id="status">Website setup in progress.</p>
+    <p id="status">Connecting to VoltMarket's database...</p>
+    <div id="products"></div>
   </main>
+
+  <script>
+    const PROJECT_URL = "YOUR_SUPABASE_PROJECT_URL";
+    const PUBLISHABLE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
+
+    const statusBox = document.getElementById("status");
+    const categoryBox = document.getElementById("categories");
+    const productBox = document.getElementById("products");
+
+    const db = window.supabase.createClient(
+      PROJECT_URL,
+      PUBLISHABLE_KEY
+    );
+
+    function safe(value) {
+      const el = document.createElement("span");
+      el.textContent = String(value ?? "");
+      return el.innerHTML;
+    }
+
+    function first(row, names, fallback = "") {
+      for (const name of names) {
+        if (row[name] !== undefined && row[name] !== null) {
+          return row[name];
+        }
+      }
+      return fallback;
+    }
+
+    function money(value) {
+      const amount = Number(value);
+      return Number.isFinite(amount)
+        ? "GH₵ " + amount.toLocaleString("en-GH")
+        : "Price not available";
+    }
+
+    async function loadMarketplace() {
+      try {
+        const [categoryResult, listingResult] = await Promise.all([
+          db.from("categories").select("*"),
+          db.from("listings").select("*")
+        ]);
+
+        if (categoryResult.error) {
+          throw new Error(
+            "Categories: " + categoryResult.error.message
+          );
+        }
+
+        if (listingResult.error) {
+          throw new Error(
+            "Listings: " + listingResult.error.message
+          );
+        }
+
+        const categories = categoryResult.data || [];
+        const listings = listingResult.data || [];
+
+        categoryBox.innerHTML = "";
+
+        if (categories.length === 0) {
+          categoryBox.textContent = "No categories found yet.";
+        } else {
+          categories.forEach(category => {
+            const name = first(
+              category, ["name", "title", "label"], "Category"
+            );
+            const chip = document.createElement("span");
+            chip.textContent = name;
+            categoryBox.appendChild(chip);
+          });
+        }
+
+        function showProducts() {
+          const query = document.getElementById("search")
+            .value.trim().toLowerCase();
+
+          const filtered = listings.filter(item => {
+            const title = first(
+              item, ["title", "name", "product_name"]
+            );
+            const description = first(item, ["description"]);
+            return (String(title) + " " + String(description))
+              .toLowerCase().includes(query);
+          });
+
+          productBox.innerHTML = "";
+
+          if (filtered.length === 0) {
+            productBox.textContent =
+              "No matching listings yet. Products will appear here when available.";
+            return;
+          }
+
+          filtered.forEach(item => {
+            const title = first(
+              item, ["title", "name", "product_name"], "Untitled product"
+            );
+            const price = first(
+              item, ["price", "price_ghs", "amount"], null
+            );
+            const description = first(item, ["description"]);
+            const card = document.createElement("article");
+            card.className = "product";
+            card.innerHTML =
+              "<h3>" + safe(title) + "</h3>" +
+              '<p class="price">' + safe(money(price)) + "</p>" +
+              "<p>" + safe(description) + "</p>";
+            productBox.appendChild(card);
+          });
+        }
+
+        document.getElementById("search").oninput = showProducts;
+        showProducts();
+
+        statusBox.textContent =
+          "Connected! Categories: " + categories.length +
+          " · Listings: " + listings.length;
+      } catch (error) {
+        statusBox.textContent =
+          "Connection needs attention: " + error.message;
+        categoryBox.textContent = "Categories could not be loaded.";
+        productBox.textContent =
+          "Check your Supabase URL, publishable key, table permissions and database policies.";
+      }
+    }
+
+    if (
+      PROJECT_URL.startsWith("https://") &&
+      !PROJECT_URL.includes("YOUR_SUPABASE") &&
+      PUBLISHABLE_KEY.length > 20 &&
+      !PUBLISHABLE_KEY.includes("YOUR_SUPABASE")
+    ) {
+      loadMarketplace();
+    } else {
+      statusBox.textContent =
+        "Add your Supabase Project URL and Publishable Key in the code.";
+    }
+  </script>
 </body>
 </html>
